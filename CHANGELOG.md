@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — 2026-10-16
 
+- contracts/vesting/src/lib.rs: `get_unvested_amount(env, schedule_id) -> i128`
+  view function (#99). Returns `total_amount - vested_amount(now)`, clamped to
+  `0`. Replaces client-side computation for treasury dashboards that need to
+  display how much remains unvested. Read-only (no TTL bump). Four new tests:
+  `test_get_unvested_amount_mid_schedule_and_at_end`,
+  `test_get_unvested_amount_before_cliff`, and a conservation invariant test
+  `test_unvested_plus_claimable_plus_claimed_equals_total`. README updated.
+
+### Added — 2026-10-16 (earlier)
+
 - CODE_OF_CONDUCT.md: Contributor Covenant 2.1 added at repository root (#117).
   Enforcement contact points to the GitHub private security reporting URL.
   CONTRIBUTING.md updated with a "Code of Conduct" section linking to it.
