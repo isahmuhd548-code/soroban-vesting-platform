@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 2026-10-16
+
+- contracts/token/src/lib.rs: added `///` doc comments to all 18 public
+  functions (#95). Each comment states purpose, auth requirement, panic
+  conditions, and return value. Covers `__constructor`, `mint`, `burn`,
+  `transfer`, `transfer_from`, `approve`, `pause`, `unpause`,
+  `transfer_admin`, `name`, `symbol`, `decimals`, `total_supply`, `balance`,
+  `allowance`, `is_paused`, `admin`, and `extend_ttl`. No behaviour changes;
+  all existing tests continue to pass.
+
 ### Added — 2026-10-16
 
 - CODE_OF_CONDUCT.md: Contributor Covenant 2.1 added at repository root (#117).
