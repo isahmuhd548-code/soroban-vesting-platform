@@ -9,16 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — 2026-10-16
 
-- contracts/vesting/src/lib.rs: `transfer_admin` now reads the current admin
-  address before overwriting it and emits `(old_admin, new_admin)` in the
-  `admXfer` event payload instead of only `new_admin` (#102). Off-chain
-  indexers can now reconstruct the full admin hand-off chain from events alone
-  without replaying all transactions.
-  `test_event_transfer_admin` updated to assert both addresses using the
-  `soroban_sdk::vec!` tuple comparison pattern.
-  `contracts/vesting/README.md` events table updated accordingly.
+- contracts/token/src/lib.rs: added `///` doc comments to all 18 public
+  functions (#95). Each comment states purpose, auth requirement, panic
+  conditions, and return value. Covers `__constructor`, `mint`, `burn`,
+  `transfer`, `transfer_from`, `approve`, `pause`, `unpause`,
+  `transfer_admin`, `name`, `symbol`, `decimals`, `total_supply`, `balance`,
+  `allowance`, `is_paused`, `admin`, and `extend_ttl`. No behaviour changes;
+  all existing tests continue to pass.
 
 ### Added — 2026-10-16
+
+- contracts/vesting/src/lib.rs: `get_unvested_amount(env, schedule_id) -> i128`
+  view function (#99). Returns `total_amount - vested_amount(now)`, clamped to
+  `0`. Replaces client-side computation for treasury dashboards that need to
+  display how much remains unvested. Read-only (no TTL bump). Four new tests:
+  `test_get_unvested_amount_mid_schedule_and_at_end`,
+  `test_get_unvested_amount_before_cliff`, and a conservation invariant test
+  `test_unvested_plus_claimable_plus_claimed_equals_total`. README updated.
+
+### Added — 2026-10-16 (earlier)
 
 - CODE_OF_CONDUCT.md: Contributor Covenant 2.1 added at repository root (#117).
   Enforcement contact points to the GitHub private security reporting URL.

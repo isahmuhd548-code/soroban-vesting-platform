@@ -72,7 +72,18 @@ pub struct TokenContract;
 impl TokenContract {
     // ── Constructor ─────────────────────────────────────────────────────────
 
-    /// Constructor: set token metadata and mint initial supply at deploy time.
+    /// Initialise the token at deploy time.
+    ///
+    /// Sets admin, name, symbol, decimals, and paused=false in instance
+    /// storage, then mints `initial_supply` to `admin` if it is positive.
+    /// Called exactly once by the Soroban host when the contract is deployed
+    /// — there is no separate `initialize` call.
+    ///
+    /// # Auth
+    /// None — the constructor runs atomically with deployment.
+    ///
+    /// # Panics
+    /// - `decimals > 18`
     pub fn __constructor(
         env: Env,
         admin: Address,
@@ -100,6 +111,22 @@ impl TokenContract {
 
     // ── Mint / Burn ─────────────────────────────────────────────────────────
 
+    /// Mint `amount` new tokens and credit them to `to`.
+    ///
+    /// Increases `total_supply` and the balance of `to` by `amount`.
+    /// Bumps the instance and the `to` balance persistent TTL.
+    ///
+    /// # Auth
+    /// Requires the current admin to have signed the transaction.
+    ///
+    /// # Panics
+    /// - `amount <= 0`
+    /// - Contract is paused (`require_not_paused`)
+    /// - `to`'s balance would overflow `i128`
+    /// - `total_supply` would overflow `i128`
+    ///
+    /// # Events
+    /// Emits `(mint,)` → `(to, amount)`
     pub fn mint(env: Env, to: Address, amount: i128) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
@@ -111,6 +138,21 @@ impl TokenContract {
         env.events().publish((EVT_MINT,), (to, amount));
     }
 
+    /// Burn `amount` tokens from `from` and decrease `total_supply`.
+    ///
+    /// Subtracts `amount` from the balance of `from` and the total supply.
+    /// Bumps the instance and the `from` balance persistent TTL.
+    ///
+    /// # Auth
+    /// Requires `from` to have signed the transaction.
+    ///
+    /// # Panics
+    /// - `amount <= 0`
+    /// - Contract is paused (`require_not_paused`)
+    /// - `from`'s balance < `amount`
+    ///
+    /// # Events
+    /// Emits `(burn,)` → `(from, amount)`
     pub fn burn(env: Env, from: Address, amount: i128) {
         Self::bump_instance(&env);
         from.require_auth();
@@ -138,6 +180,21 @@ impl TokenContract {
 
     // ── Transfer ────────────────────────────────────────────────────────────
 
+    /// Transfer `amount` tokens from `from` to `to`.
+    ///
+    /// Decreases `from`'s balance and increases `to`'s balance by `amount`.
+    /// Bumps the instance and both balances' persistent TTL.
+    ///
+    /// # Auth
+    /// Requires `from` to have signed the transaction.
+    ///
+    /// # Panics
+    /// - `amount <= 0`
+    /// - Contract is paused (`require_not_paused`)
+    /// - `from`'s balance < `amount`
+    ///
+    /// # Events
+    /// Emits `(transfer,)` → `(from, to, amount)`
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         Self::bump_instance(&env);
         from.require_auth();
@@ -146,6 +203,23 @@ impl TokenContract {
         env.events().publish((EVT_TRANSFER,), (from, to, amount));
     }
 
+    /// Transfer `amount` tokens from `from` to `to` using `spender`'s allowance.
+    ///
+    /// Deducts `amount` from the `(from, spender)` allowance, then moves the
+    /// tokens from `from` to `to`.  Bumps the instance and the allowance and
+    /// both balance persistent TTL entries.
+    ///
+    /// # Auth
+    /// Requires `spender` to have signed the transaction.
+    ///
+    /// # Panics
+    /// - `amount <= 0` (enforced by inner `_transfer`)
+    /// - Contract is paused (`require_not_paused`)
+    /// - Allowance of `(from, spender)` < `amount`
+    /// - `from`'s balance < `amount`
+    ///
+    /// # Events
+    /// Emits `(transfer,)` → `(from, to, amount)`
     pub fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) {
         Self::bump_instance(&env);
         spender.require_auth();
@@ -170,6 +244,21 @@ impl TokenContract {
 
     // ── Allowances ──────────────────────────────────────────────────────────
 
+    /// Set the spending allowance that `spender` may use on behalf of `owner`.
+    ///
+    /// Stores `amount` as the `(owner, spender)` allowance.  Setting `amount`
+    /// to `0` effectively revokes the allowance.  Bumps the instance and the
+    /// allowance persistent TTL.
+    ///
+    /// # Auth
+    /// Requires `owner` to have signed the transaction.
+    ///
+    /// # Panics
+    /// - `amount < 0`
+    /// - Contract is paused (`require_not_paused`)
+    ///
+    /// # Events
+    /// Emits `(approve,)` → `(owner, spender, amount)`
     pub fn approve(env: Env, owner: Address, spender: Address, amount: i128) {
         Self::bump_instance(&env);
         owner.require_auth();
@@ -190,6 +279,18 @@ impl TokenContract {
 
     // ── Pause ───────────────────────────────────────────────────────────────
 
+    /// Pause the contract, blocking `mint`, `burn`, `transfer`,
+    /// `transfer_from`, and `approve`.
+    ///
+    /// Sets the `PAUSED` flag to `true` in instance storage.
+    /// `transfer_admin` and the read-only getters remain callable while
+    /// paused.  Bumps the instance TTL.
+    ///
+    /// # Auth
+    /// Requires the current admin to have signed the transaction.
+    ///
+    /// # Events
+    /// Emits `(pause,)` → `()`
     pub fn pause(env: Env) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
@@ -197,6 +298,18 @@ impl TokenContract {
         env.events().publish((EVT_PAUSE,), ());
     }
 
+    /// Unpause the contract, restoring normal operation.
+    ///
+    /// Sets the `PAUSED` flag to `false` in instance storage.  All
+    /// previously blocked functions (`mint`, `burn`, `transfer`,
+    /// `transfer_from`, `approve`) become callable again.  Bumps the
+    /// instance TTL.
+    ///
+    /// # Auth
+    /// Requires the current admin to have signed the transaction.
+    ///
+    /// # Events
+    /// Emits `(unpause,)` → `()`
     pub fn unpause(env: Env) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
@@ -206,6 +319,20 @@ impl TokenContract {
 
     // ── Admin ───────────────────────────────────────────────────────────────
 
+    /// Transfer the admin role to `new_admin`.
+    ///
+    /// Overwrites the `ADMIN` key in instance storage with `new_admin`.
+    /// Requires both the current admin and `new_admin` to sign, which
+    /// prevents handing the role to an address that cannot accept it.
+    /// Not gated by the pause flag — admin transfer must always be
+    /// possible to allow recovery from a stuck state.  Bumps the instance
+    /// TTL.
+    ///
+    /// # Auth
+    /// Requires both the current admin **and** `new_admin` to have signed.
+    ///
+    /// # Panics
+    /// - Current admin not initialized in storage
     pub fn transfer_admin(env: Env, new_admin: Address) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
@@ -215,6 +342,15 @@ impl TokenContract {
 
     // ── Metadata reads ──────────────────────────────────────────────────────
 
+    /// Return the human-readable token name (e.g. `"Vesting Token"`).
+    ///
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
+    ///
+    /// # Panics
+    /// - Contract was not initialised (storage key missing)
     pub fn name(env: Env) -> String {
         env.storage()
             .instance()
@@ -222,6 +358,15 @@ impl TokenContract {
             .expect("not initialized")
     }
 
+    /// Return the token ticker symbol (e.g. `"VEST"`).
+    ///
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
+    ///
+    /// # Panics
+    /// - Contract was not initialised (storage key missing)
     pub fn symbol(env: Env) -> String {
         env.storage()
             .instance()
@@ -229,18 +374,46 @@ impl TokenContract {
             .expect("not initialized")
     }
 
+    /// Return the number of decimal places used to represent token amounts.
+    ///
+    /// Defaults to `7` if not set in storage (Stellar convention).
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
     pub fn decimals(env: Env) -> u32 {
         env.storage().instance().get(&DECIMALS).unwrap_or(7)
     }
 
+    /// Return the current total token supply (sum of all account balances).
+    ///
+    /// Returns `0` if no tokens have been minted yet.
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
     pub fn total_supply(env: Env) -> i128 {
         env.storage().instance().get(&TOTAL).unwrap_or(0)
     }
 
+    /// Return the token balance of `account`.
+    ///
+    /// Returns `0` if the account has never received tokens.
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
     pub fn balance(env: Env, account: Address) -> i128 {
         Self::balance_of(&env, &account)
     }
 
+    /// Return the remaining spending allowance that `spender` has on behalf of `owner`.
+    ///
+    /// Returns `0` if no allowance has been set.
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
     pub fn allowance(env: Env, owner: Address, spender: Address) -> i128 {
         env.storage()
             .persistent()
@@ -248,10 +421,25 @@ impl TokenContract {
             .unwrap_or(0)
     }
 
+    /// Return `true` if the contract is currently paused, `false` otherwise.
+    ///
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
     pub fn is_paused(env: Env) -> bool {
         env.storage().instance().get(&PAUSED).unwrap_or(false)
     }
 
+    /// Return the current admin address.
+    ///
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
+    ///
+    /// # Panics
+    /// - Contract was not initialised (storage key missing)
     pub fn admin(env: Env) -> Address {
         env.storage()
             .instance()

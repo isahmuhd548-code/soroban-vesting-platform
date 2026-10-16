@@ -177,6 +177,17 @@ Read-only; does not extend TTL.
 
 ---
 
+### `get_unvested_amount(env, schedule_id: u64) -> i128`
+
+Returns `total_amount - vested_amount(now)`, clamped to `0`.  Represents the
+amount that would be returned to the recipient if `revoke()` were called at
+this instant.  Returns `0` once the schedule is fully vested.
+Read-only; does not extend TTL.
+
+**Panics:** `"schedule not found"` — schedule ID does not exist
+
+---
+
 ### `extend_ttl(env)`
 
 Permissionless. Extends the contract instance TTL to `INSTANCE_BUMP_LEDGERS`
