@@ -123,11 +123,12 @@ Authorization: admin.
 ### `transfer_admin(env, new_admin: Address)`
 
 Transfers the admin role. Requires authorization from both the current admin
-and the `new_admin`.
+and the `new_admin`.  Reads the current admin address before overwriting it so
+the event payload contains both the old and new admin addresses.
 
 Authorization: current admin **and** `new_admin`.
 
-**Events:** `("admXfer",)` → `new_admin: Address`
+**Events:** `("admXfer",)` → `(old_admin: Address, new_admin: Address)`
 
 ---
 
@@ -229,7 +230,7 @@ See [docs/ttl.md](../../docs/ttl.md).
 | `("revoked",)` | `(schedule_id, unvested)` | `revoke` |
 | `("paused",)` | `()` | `pause` |
 | `("unpaused",)` | `()` | `unpause` |
-| `("admXfer",)` | `new_admin` | `transfer_admin` |
+| `("admXfer",)` | `(old_admin, new_admin)` | `transfer_admin` |
 
 ---
 

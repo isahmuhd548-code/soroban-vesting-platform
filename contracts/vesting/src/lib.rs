@@ -321,8 +321,13 @@ impl VestingContract {
         Self::bump_instance(&env);
         Self::require_admin(&env);
         new_admin.require_auth();
+        let old_admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         env.storage().instance().set(&ADMIN, &new_admin);
-        env.events().publish((EVT_ADM_XFER,), new_admin);
+        env.events().publish((EVT_ADM_XFER,), (old_admin, new_admin));
     }
 
     // ── Read functions ─────────────────────────────────────────────────────
@@ -1297,19 +1302,30 @@ mod tests {
 
     #[test]
     fn test_event_transfer_admin() {
-        let (env, vesting_id, _admin, _b, _f) = setup();
+        use soroban_sdk::IntoVal;
+        let (env, vesting_id, old_admin, _b, _f) = setup();
         let vesting = VestingContractClient::new(&env, &vesting_id);
         let new_admin = Address::generate(&env);
 
         vesting.transfer_admin(&new_admin);
 
-        let found = !env
-            .events()
-            .all()
-            .filter_by_contract(&vesting_id)
-            .events()
-            .is_empty();
-        assert!(found, "expected 'admXfer' event");
+        // The event payload must include both old_admin and new_admin so that
+        // off-chain indexers can reconstruct the full admin hand-off chain.
+        //
+        // transfer_admin is the only call here, so the vesting contract emits
+        // exactly one event.  Use the same tuple comparison pattern as the
+        // token contract event tests.
+        assert_eq!(
+            env.events().all().filter_by_contract(&vesting_id),
+            soroban_sdk::vec![
+                &env,
+                (
+                    vesting_id.clone(),
+                    (symbol_short!("admXfer"),).into_val(&env),
+                    (old_admin.clone(), new_admin.clone()).into_val(&env),
+                )
+            ]
+        );
     }
 
     // ── Upgrade 1: vesting arithmetic uses saturating_mul ────────────────────

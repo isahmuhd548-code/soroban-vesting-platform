@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 2026-10-16
+
+- contracts/vesting/src/lib.rs: `transfer_admin` now reads the current admin
+  address before overwriting it and emits `(old_admin, new_admin)` in the
+  `admXfer` event payload instead of only `new_admin` (#102). Off-chain
+  indexers can now reconstruct the full admin hand-off chain from events alone
+  without replaying all transactions.
+  `test_event_transfer_admin` updated to assert both addresses using the
+  `soroban_sdk::vec!` tuple comparison pattern.
+  `contracts/vesting/README.md` events table updated accordingly.
+
 ### Added — 2026-10-16
 
 - CODE_OF_CONDUCT.md: Contributor Covenant 2.1 added at repository root (#117).
