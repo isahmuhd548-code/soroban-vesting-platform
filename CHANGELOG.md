@@ -7,14 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 2026-10-16
+
+- contracts/token/src/lib.rs: added `///` doc comments to all 18 public
+  functions (#95). Each comment states purpose, auth requirement, panic
+  conditions, and return value. Covers `__constructor`, `mint`, `burn`,
+  `transfer`, `transfer_from`, `approve`, `pause`, `unpause`,
+  `transfer_admin`, `name`, `symbol`, `decimals`, `total_supply`, `balance`,
+  `allowance`, `is_paused`, `admin`, and `extend_ttl`. No behaviour changes;
+  all existing tests continue to pass.
+
 ### Added — 2026-10-16
 
-- contracts/vesting/src/lib.rs: `is_fully_vested(env, schedule_id) -> bool`
-  view function (#97). Returns `true` when `vested_amount >= total_amount` at
-  the current ledger timestamp. Read-only (no TTL bump). Allows callers to
-  avoid client-side `get_schedule().status` checks. Two new tests:
-  `test_is_fully_vested_false_before_end_true_after` and
-  `test_is_fully_vested_false_during_cliff`. README updated.
+- contracts/vesting/src/lib.rs: `get_unvested_amount(env, schedule_id) -> i128`
+  view function (#99). Returns `total_amount - vested_amount(now)`, clamped to
+  `0`. Replaces client-side computation for treasury dashboards that need to
+  display how much remains unvested. Read-only (no TTL bump). Four new tests:
+  `test_get_unvested_amount_mid_schedule_and_at_end`,
+  `test_get_unvested_amount_before_cliff`, and a conservation invariant test
+  `test_unvested_plus_claimable_plus_claimed_equals_total`. README updated.
 
 ### Added — 2026-10-16 (earlier)
 

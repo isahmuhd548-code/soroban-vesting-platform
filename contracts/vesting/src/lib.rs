@@ -366,12 +366,11 @@ impl VestingContract {
         env.storage().instance().get(&SCHED_ID).unwrap_or(0)
     }
 
-    /// Return `true` if the schedule is fully vested (vested_amount >=
-    /// total_amount), `false` otherwise.
+    /// Return the amount that is still unvested (what would be returned to
+    /// the recipient if `revoke()` were called now).
     ///
-    /// Computed from the schedule's vested amount at the current ledger
-    /// timestamp.  Returns `true` at or after `start_time + total_duration`,
-    /// even if the beneficiary has not yet claimed the tokens.
+    /// Computed as `total_amount - vested_amount(schedule, now)`, clamped to
+    /// `0`.  Returns `0` once the schedule is fully vested.
     /// Read-only — does not extend the TTL or write any state.
     ///
     /// # Auth
@@ -379,14 +378,15 @@ impl VestingContract {
     ///
     /// # Panics
     /// - `schedule_id` does not exist (`VestingError::ScheduleNotFound`)
-    pub fn is_fully_vested(env: Env, schedule_id: u64) -> bool {
+    pub fn get_unvested_amount(env: Env, schedule_id: u64) -> i128 {
         let schedule: VestingSchedule = env
             .storage()
             .persistent()
             .get(&DataKey::Schedule(schedule_id))
             .unwrap_or_else(|| panic_with_error!(&env, VestingError::ScheduleNotFound));
         let now = env.ledger().timestamp();
-        VestingContract::vested_amount(&schedule, now) >= schedule.total_amount
+        let vested = VestingContract::vested_amount(&schedule, now);
+        (schedule.total_amount - vested).max(0)
     }
 
     /// Extend the contract instance TTL to `INSTANCE_BUMP_LEDGERS`.
@@ -1335,12 +1335,12 @@ mod tests {
         assert!(found, "expected 'admXfer' event");
     }
 
-    // ── is_fully_vested ──────────────────────────────────────────────────────
+    // ── get_unvested_amount ──────────────────────────────────────────────────
 
-    /// is_fully_vested returns false before the end of the schedule and true
-    /// at and after the end.
+    /// get_unvested_amount returns the correct unvested amount mid-schedule
+    /// and 0 at/after the end.
     #[test]
-    fn test_is_fully_vested_false_before_end_true_after() {
+    fn test_get_unvested_amount_mid_schedule_and_at_end() {
         let (env, vesting_id, _admin, beneficiary, funder) = setup();
         let token = new_token(&env, &funder, 100_000);
         let vesting = VestingContractClient::new(&env, &vesting_id);
@@ -1356,22 +1356,29 @@ mod tests {
             total_duration: 100,
         });
 
-        // Before end: not fully vested
+        // At t=0: nothing vested yet, full amount unvested
+        assert_eq!(vesting.get_unvested_amount(&id), 100_000);
+
+        // At t=25: 25_000 vested, 75_000 unvested
+        env.ledger().with_mut(|l| l.timestamp = start + 25);
+        assert_eq!(vesting.get_unvested_amount(&id), 75_000);
+
+        // At t=50: 50_000 vested, 50_000 unvested
         env.ledger().with_mut(|l| l.timestamp = start + 50);
-        assert!(!vesting.is_fully_vested(&id));
+        assert_eq!(vesting.get_unvested_amount(&id), 50_000);
 
-        // Exactly at end: fully vested
+        // At end (t=100): fully vested, 0 unvested
         env.ledger().with_mut(|l| l.timestamp = start + 100);
-        assert!(vesting.is_fully_vested(&id));
+        assert_eq!(vesting.get_unvested_amount(&id), 0);
 
-        // Past end: still true
+        // Past end: still 0
         env.ledger().with_mut(|l| l.timestamp = start + 200);
-        assert!(vesting.is_fully_vested(&id));
+        assert_eq!(vesting.get_unvested_amount(&id), 0);
     }
 
-    /// is_fully_vested returns false during the cliff period.
+    /// get_unvested_amount returns total_amount before the cliff.
     #[test]
-    fn test_is_fully_vested_false_during_cliff() {
+    fn test_get_unvested_amount_before_cliff() {
         let (env, vesting_id, _admin, beneficiary, funder) = setup();
         let token = new_token(&env, &funder, 100_000);
         let vesting = VestingContractClient::new(&env, &vesting_id);
@@ -1387,13 +1394,48 @@ mod tests {
             total_duration: 100,
         });
 
-        // During cliff
+        // Before cliff: 0 vested, full amount unvested
         env.ledger().with_mut(|l| l.timestamp = start + 25);
-        assert!(!vesting.is_fully_vested(&id));
+        assert_eq!(vesting.get_unvested_amount(&id), 100_000);
 
-        // Right at end
-        env.ledger().with_mut(|l| l.timestamp = start + 100);
-        assert!(vesting.is_fully_vested(&id));
+        // At cliff: 50_000 vested, 50_000 unvested
+        env.ledger().with_mut(|l| l.timestamp = start + 50);
+        assert_eq!(vesting.get_unvested_amount(&id), 50_000);
+    }
+
+    /// get_unvested_amount + get_claimable + claimed_amount == total_amount
+    /// (conservation of tokens at any point during the schedule).
+    #[test]
+    fn test_unvested_plus_claimable_plus_claimed_equals_total() {
+        let (env, vesting_id, _admin, beneficiary, funder) = setup();
+        let token = new_token(&env, &funder, 100_000);
+        let vesting = VestingContractClient::new(&env, &vesting_id);
+        let start = env.ledger().timestamp();
+
+        let id = vesting.create_schedule(&CreateScheduleParams {
+            from: funder.clone(),
+            beneficiary: beneficiary.clone(),
+            token_address: token,
+            total_amount: 100_000,
+            start_time: start,
+            cliff_duration: 0,
+            total_duration: 100,
+        });
+
+        // Claim at t=40
+        env.ledger().with_mut(|l| l.timestamp = start + 40);
+        vesting.claim(&id);
+
+        // Conservation invariant: unvested + claimable + claimed == total
+        let unvested = vesting.get_unvested_amount(&id);
+        let claimable = vesting.get_claimable(&id);
+        let schedule = vesting.get_schedule(&id);
+        assert_eq!(
+            unvested + claimable + schedule.claimed_amount,
+            100_000,
+            "token conservation violated: unvested={unvested} + claimable={claimable} + claimed={} != 100_000",
+            schedule.claimed_amount
+        );
     }
 
     // ── Upgrade 1: vesting arithmetic uses saturating_mul ────────────────────

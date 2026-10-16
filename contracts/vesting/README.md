@@ -176,11 +176,12 @@ Read-only; does not extend TTL.
 
 ---
 
-### `is_fully_vested(env, schedule_id: u64) -> bool`
+### `get_unvested_amount(env, schedule_id: u64) -> i128`
 
-Returns `true` when `vested_amount(schedule, now) >= schedule.total_amount`,
-i.e. the entire amount has vested regardless of whether it has been claimed.
-Returns `false` before the schedule end.  Read-only; does not extend TTL.
+Returns `total_amount - vested_amount(now)`, clamped to `0`.  Represents the
+amount that would be returned to the recipient if `revoke()` were called at
+this instant.  Returns `0` once the schedule is fully vested.
+Read-only; does not extend TTL.
 
 **Panics:** `"schedule not found"` — schedule ID does not exist
 
