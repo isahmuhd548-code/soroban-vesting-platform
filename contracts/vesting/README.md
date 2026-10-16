@@ -176,6 +176,16 @@ Read-only; does not extend TTL.
 
 ---
 
+### `is_fully_vested(env, schedule_id: u64) -> bool`
+
+Returns `true` when `vested_amount(schedule, now) >= schedule.total_amount`,
+i.e. the entire amount has vested regardless of whether it has been claimed.
+Returns `false` before the schedule end.  Read-only; does not extend TTL.
+
+**Panics:** `"schedule not found"` — schedule ID does not exist
+
+---
+
 ### `extend_ttl(env)`
 
 Permissionless. Extends the contract instance TTL to `INSTANCE_BUMP_LEDGERS`

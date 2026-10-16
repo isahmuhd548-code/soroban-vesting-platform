@@ -366,6 +366,29 @@ impl VestingContract {
         env.storage().instance().get(&SCHED_ID).unwrap_or(0)
     }
 
+    /// Return `true` if the schedule is fully vested (vested_amount >=
+    /// total_amount), `false` otherwise.
+    ///
+    /// Computed from the schedule's vested amount at the current ledger
+    /// timestamp.  Returns `true` at or after `start_time + total_duration`,
+    /// even if the beneficiary has not yet claimed the tokens.
+    /// Read-only — does not extend the TTL or write any state.
+    ///
+    /// # Auth
+    /// None.
+    ///
+    /// # Panics
+    /// - `schedule_id` does not exist (`VestingError::ScheduleNotFound`)
+    pub fn is_fully_vested(env: Env, schedule_id: u64) -> bool {
+        let schedule: VestingSchedule = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Schedule(schedule_id))
+            .unwrap_or_else(|| panic_with_error!(&env, VestingError::ScheduleNotFound));
+        let now = env.ledger().timestamp();
+        VestingContract::vested_amount(&schedule, now) >= schedule.total_amount
+    }
+
     /// Extend the contract instance TTL to `INSTANCE_BUMP_LEDGERS`.
     ///
     /// This is a permissionless keep-alive for contracts that are only read
@@ -1310,6 +1333,67 @@ mod tests {
             .events()
             .is_empty();
         assert!(found, "expected 'admXfer' event");
+    }
+
+    // ── is_fully_vested ──────────────────────────────────────────────────────
+
+    /// is_fully_vested returns false before the end of the schedule and true
+    /// at and after the end.
+    #[test]
+    fn test_is_fully_vested_false_before_end_true_after() {
+        let (env, vesting_id, _admin, beneficiary, funder) = setup();
+        let token = new_token(&env, &funder, 100_000);
+        let vesting = VestingContractClient::new(&env, &vesting_id);
+        let start = env.ledger().timestamp();
+
+        let id = vesting.create_schedule(&CreateScheduleParams {
+            from: funder.clone(),
+            beneficiary: beneficiary.clone(),
+            token_address: token,
+            total_amount: 100_000,
+            start_time: start,
+            cliff_duration: 0,
+            total_duration: 100,
+        });
+
+        // Before end: not fully vested
+        env.ledger().with_mut(|l| l.timestamp = start + 50);
+        assert!(!vesting.is_fully_vested(&id));
+
+        // Exactly at end: fully vested
+        env.ledger().with_mut(|l| l.timestamp = start + 100);
+        assert!(vesting.is_fully_vested(&id));
+
+        // Past end: still true
+        env.ledger().with_mut(|l| l.timestamp = start + 200);
+        assert!(vesting.is_fully_vested(&id));
+    }
+
+    /// is_fully_vested returns false during the cliff period.
+    #[test]
+    fn test_is_fully_vested_false_during_cliff() {
+        let (env, vesting_id, _admin, beneficiary, funder) = setup();
+        let token = new_token(&env, &funder, 100_000);
+        let vesting = VestingContractClient::new(&env, &vesting_id);
+        let start = env.ledger().timestamp();
+
+        let id = vesting.create_schedule(&CreateScheduleParams {
+            from: funder.clone(),
+            beneficiary: beneficiary.clone(),
+            token_address: token,
+            total_amount: 100_000,
+            start_time: start,
+            cliff_duration: 50,
+            total_duration: 100,
+        });
+
+        // During cliff
+        env.ledger().with_mut(|l| l.timestamp = start + 25);
+        assert!(!vesting.is_fully_vested(&id));
+
+        // Right at end
+        env.ledger().with_mut(|l| l.timestamp = start + 100);
+        assert!(vesting.is_fully_vested(&id));
     }
 
     // ── Upgrade 1: vesting arithmetic uses saturating_mul ────────────────────

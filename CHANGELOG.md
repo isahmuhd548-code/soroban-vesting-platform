@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — 2026-10-16
 
+- contracts/vesting/src/lib.rs: `is_fully_vested(env, schedule_id) -> bool`
+  view function (#97). Returns `true` when `vested_amount >= total_amount` at
+  the current ledger timestamp. Read-only (no TTL bump). Allows callers to
+  avoid client-side `get_schedule().status` checks. Two new tests:
+  `test_is_fully_vested_false_before_end_true_after` and
+  `test_is_fully_vested_false_during_cliff`. README updated.
+
+### Added — 2026-10-16 (earlier)
+
 - CODE_OF_CONDUCT.md: Contributor Covenant 2.1 added at repository root (#117).
   Enforcement contact points to the GitHub private security reporting URL.
   CONTRIBUTING.md updated with a "Code of Conduct" section linking to it.
